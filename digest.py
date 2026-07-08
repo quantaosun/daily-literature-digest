@@ -101,7 +101,7 @@ def fetch_arxiv():
     Returns list of dicts: {title, authors, summary, link, published}
     """
     url = (
-        "http://export.arxiv.org/api/query?"
+        "https://export.arxiv.org/api/query?"
         + urlencode({
             "search_query": ARXIV_QUERY,
             "sortBy": "submittedDate",
