@@ -3,7 +3,7 @@
 ## Project Overview
 A GitHub Actions workflow that searches PubMed for chemistry papers matching configured keywords, summarizes them via DeepSeek LLM, and emails a daily digest.
 
-**Tracked topics:** organic synthesis, total synthesis, reaction mechanisms, medicinal chemistry, DEL, catalysis
+**Tracked topics:** organic synthesis, total synthesis, reaction mechanism, catalysis, medicinal chemistry, DNA-encoded library (DEL), C-H activation, cross-coupling, enantioselective, organocatalysis, photocatalysis, drug discovery
 
 ## Key Files
 - `digest.py` — Main script: PubMed search → LLM summarization → email sending
@@ -54,4 +54,4 @@ Only `requests` library (installed via pip in the workflow).
 - English-only output (digest and email)
 - LLM model: DeepSeek Chat (or any OpenAI-compatible API)
 - All SMTP config via env vars, never hardcoded
-- Papers limited by `MAX_PAPERS` after fetching all matching IDs
+- Papers limited by `MAX_PAPERS` via NCBI API `retmax` parameter
