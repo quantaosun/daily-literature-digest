@@ -2,7 +2,7 @@
 
 Automatically search PubMed for latest chemistry papers, summarize them with LLM, and email yourself a daily digest.
 
-**Tracked topics:** organic reaction mechanisms, organic synthesis, total synthesis, medicinal chemistry, DEL (DNA-Encoded Library)
+**Tracked topics:** organic synthesis, total synthesis, reaction mechanism, catalysis, medicinal chemistry, DNA-encoded library (DEL), C-H activation, cross-coupling, enantioselective, organocatalysis, photocatalysis, drug discovery
 
 **Data source:** PubMed (NCBI E-utilities, free, no API key required)
 
