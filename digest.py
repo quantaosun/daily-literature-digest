@@ -18,7 +18,6 @@ Configure via environment variables (set in GitHub Secrets):
 
 import os
 import sys
-import json
 import smtplib
 import email.utils
 from email.mime.text import MIMEText
@@ -97,7 +96,7 @@ def fetch_pubmed():
         "term": full_query,
         "retmode": "xml",
         "retmax": str(MAX_PAPERS),
-        "sort": "date",
+        "sort": "date_desc",
     }
 
     try:
@@ -154,8 +153,8 @@ def fetch_pubmed():
                 abstract_resp.raise_for_status()
                 abstract_root = ElementTree.fromstring(abstract_resp.content)
                 abstract_text = abstract_root.findtext('.//AbstractText')
-            except Exception:
-                pass
+            except Exception as e:
+                log(f"  ⚠  Failed to fetch abstract for PMID {pmid}: {e}")
 
             papers.append({
                 "title": title.strip(),
