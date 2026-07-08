@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --quiet --upgrade pip
-          pip install --quiet requests
+          pip install --quiet -r requirements.txt
 
       - name: Run literature digest
         env:
