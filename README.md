@@ -1,180 +1,82 @@
 # Daily Literature Digest
 
-> 📬 **每天自动检索 PubMed 最新文献 → DeepSeek 摘要 → 邮件推送到你邮箱**
+> 📬 **Automatically search PubMed → summarize with AI → email the digest to you.**
+>
+> [🇨🇳 中文版](README.zh.md)
 
-[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-自动运行-blue)](https://github.com/quantaosun/daily-literature-digest/actions)
-[![Python](https://img.shields.io/badge/Python-3.11-green)](https://www.python.org/)
-[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20Chat-red)](https://platform.deepseek.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+## What is GitHub Actions?
 
----
+**GitHub Actions** is a free automation service built into GitHub. Think of it as a robot that can run tasks for you in the cloud — on a schedule, or whenever you press a button. This repo uses it to run the literature digest script every day at 9 AM Beijing time, so you don't need to run anything on your own computer.
 
-## ⚡ 如何使用
+> No servers to set up, no cron jobs to configure, no manual work. Just fork and add secrets — GitHub Actions handles the rest.
 
-### 1. Fork 本仓库
-点击右上角 **Fork** 按钮。
-
-### 2. 配置 3 个 Secrets
-仓库 → **Settings → Secrets and variables → Actions → New repository secret**
-
-| Secret | 说明 |
-|--------|------|
-| `LLM_API_KEY` | DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com) 注册） |
-| `MAIL` | 你的邮箱（如 `yourname@qq.com`） |
-| `MAIL_PW` | SMTP 授权码（见下方 QQ Mail 设置） |
-
-### 3. ✅ 完成，自动运行
-
-配置好后，每天 **北京时间 9:00（UTC 1:00）** 自动运行。你也可以手动触发：
-
-**Actions → Daily Literature Digest → Run workflow**
-
-> **5 分钟后检查邮箱**，你会收到当天的文献摘要邮件。
-
----
-
-## ⏰ 默认执行频率
-
-- **北京时间：** 每天 **09:00**
-- **UTC 时间：** 每天 **01:00**
-- 可在 `.github/workflows/daily-digest.yml` 中修改 `cron` 表达式调整频率
-
----
-
-## 📋 本仓库由 Claude Code 协助编写
-
-本项目由 [Claude Code](https://claude.ai/code)（Anthropic 的 AI 编程助手）参与开发和代码审查。
-
-如需二次开发或修改功能：
-
-1. **阅读 [`CLAUDE.md`](CLAUDE.md)** — 记录了完整的项目架构、代码流程、配置说明和开发约定
-2. 将这个仓库 clone 到本地后，用 Claude Code 打开，它会自动读取 `CLAUDE.md` 理解项目
-3. 然后直接对 Claude 提需求即可（如"增加新的文献源"、"改为 Slack 推送"等）
-
----
-
-## Customize Keywords
-
-<details>
-<summary>🧪 Chemistry (default)</summary>
-
-```python
-KEYWORDS = [
-    "organic synthesis",
-    "total synthesis",
-    "reaction mechanism",
-    "catalysis",
-    "medicinal chemistry",
-    "DNA-encoded library",
-    "C-H activation",
-    "cross-coupling",
-    "enantioselective",
-    "organocatalysis",
-    "photocatalysis",
-    "drug discovery",
-]
-```
-</details>
-
-<details>
-<summary>🧬 Biology & Biomedical</summary>
-
-```python
-KEYWORDS = [
-    "CRISPR",
-    "gene editing",
-    "protein structure",
-    "single cell",
-    "immunotherapy",
-    "cell signaling",
-    "proteomics",
-    "genomics",
-    "RNA biology",
-]
-```
-</details>
-
-<details>
-<summary>🤖 Machine Learning & AI</summary>
-
-```python
-KEYWORDS = [
-    "large language model",
-    "deep learning",
-    "reinforcement learning",
-    "computer vision",
-    "natural language processing",
-    "neural network",
-    "transformer",
-    "diffusion model",
-    "representation learning",
-]
-```
-</details>
-
-<details>
-<summary>🔬 Physics & Materials</summary>
-
-```python
-KEYWORDS = [
-    "quantum computing",
-    "topological insulator",
-    "2D materials",
-    "superconductivity",
-    "photovoltaic",
-    "battery",
-    "catalyst",
-    "nanomaterials",
-    "metamaterial",
-]
-```
-</details>
-
-**修改方式：** 编辑 `digest.py` 中的 `KEYWORDS` 列表 → commit → push，下次自动运行生效。
-
----
-
-## Email Setup
-
-### QQ Mail（推荐）
-
-<details>
-<summary>📱 展开查看详细步骤</summary>
-
-1. 登录 [mail.qq.com](https://mail.qq.com)
-2. 设置 → 账户
-3. 开启 **POP3/SMTP 服务**
-4. 按短信验证后获取 **16 位授权码**
-5. 填入 GitHub Secrets 的 `MAIL_PW`
-
-</details>
-
-### Other Providers
-
-| Provider | SMTP Server | Port |
-|----------|-------------|------|
-| QQ Mail | `smtp.qq.com` | 465 |
-| 163 Mail | `smtp.163.com` | 465 |
-| Gmail | `smtp.gmail.com` | 587 |
-| Outlook | `smtp-mail.outlook.com` | 587 |
-
-非 QQ 邮箱需额外设置 `MAIL_SERVER` 和 `MAIL_PORT` Secrets。
-
----
-
-## Architecture
+## How it works
 
 ```
-PubMed API (free, no key)
+PubMed API (free, no key needed)
        ↓
 Search papers from last 60 days matching your keywords
        ↓
-Summarize each paper with DeepSeek LLM (English)
+Summarize each paper with DeepSeek LLM
        ↓
-Send email digest to yourself via SMTP
+Email the digest to you via SMTP
 ```
 
-**Tech stack:** Python 3.11 + `requests` | GitHub Actions | PubMed E-utilities | DeepSeek API
+GitHub Actions runs this pipeline every day at **9:00 AM Beijing time** automatically. You can also trigger it manually from the Actions tab.
+
+---
+
+## Setup (3 minutes)
+
+**1. Fork this repo** (top-right corner)
+
+**2. Add 3 Secrets** to your fork → Settings → Secrets and variables → Actions → New repository secret:
+
+| Secret | What to put |
+|--------|------------|
+| `LLM_API_KEY` | Your DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com)) |
+| `MAIL` | Your email address (e.g. `yourname@qq.com`) |
+| `MAIL_PW` | Your SMTP password / authorization code |
+
+**3. Done.** The next scheduled run will send you a digest. Or go to **Actions → Daily Literature Digest → Run workflow** to test it immediately.
+
+---
+
+## Email setup
+
+| Provider | SMTP Server | Port | Notes |
+|----------|-------------|------|-------|
+| QQ Mail | `smtp.qq.com` | 465 | [Enable POP3/SMTP → get 16-char auth code](https://service.mail.qq.com/detail/0/75) |
+| 163 Mail | `smtp.163.com` | 465 | Similar to QQ |
+| Gmail | `smtp.gmail.com` | 587 | Use an [App Password](https://support.google.com/accounts/answer/185833) |
+| Outlook | `smtp-mail.outlook.com` | 587 | Use an App Password |
+
+For non-QQ providers, also add these secrets: `MAIL_SERVER` and `MAIL_PORT`.
+
+---
+
+## Customizing the keywords
+
+Edit the `KEYWORDS` list in [`digest.py`](digest.py) (around line 45) to match your interests. The default is chemistry-focused:
+
+```python
+KEYWORDS = [
+    "organic synthesis", "total synthesis", "reaction mechanism",
+    "catalysis", "medicinal chemistry", "DNA-encoded library",
+    "C-H activation", "cross-coupling", "drug discovery",
+]
+```
+
+Want biology, ML, or physics instead? Just swap the keywords. Each keyword searches `[Title/Abstract]` on PubMed, combined with `OR`.
+
+---
+
+## Tech stack
+
+- **Python 3.11** + `requests`
+- **PubMed E-utilities** (free, no API key)
+- **DeepSeek Chat** (or any OpenAI-compatible LLM)
+- **GitHub Actions** (scheduled + manual trigger)
 
 ---
 
