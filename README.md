@@ -71,6 +71,12 @@ Want biology, ML, or physics instead? Just swap the keywords. Each keyword searc
 
 ---
 
+## Limitations
+
+- **PubMed only** — this searches PubMed, which is a subset of the biomedical literature. Not all journals are indexed.
+- **Open-access abstracts** — papers behind a paywall may have no abstract or a truncated one. Full text is never fetched.
+- **Free tier limits** — PubMed's free API has rate limits. This script respects them but may miss papers on busy days.
+
 ## Tech stack
 
 - **Python 3.11** + `requests`
