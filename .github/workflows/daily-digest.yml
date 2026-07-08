@@ -27,8 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --quiet --upgrade pip
-          # No external deps needed — all stdlib
-          echo "Using Python stdlib only"
+          pip install --quiet requests
 
       - name: Run literature digest
         env:

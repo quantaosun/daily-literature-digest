@@ -2,17 +2,17 @@
 """
 daily-literature-digest
 =======================
-Fetches latest papers from arXiv/PubMed matching organic chemistry
-keywords, summarizes them via DeepSeek LLM, and emails the digest.
+Searches PubMed for latest chemistry papers matching your keywords,
+summarizes them via DeepSeek LLM, and emails the digest to yourself.
 
 Configure via environment variables (set in GitHub Secrets):
-  LLM_API_KEY     - DeepSeek or OpenAI-compatible API key
+  LLM_API_KEY     - DeepSeek or OpenAI-compatible API key (required)
   LLM_BASE_URL    - API base URL (default: https://api.deepseek.com)
   LLM_MODEL       - Model name (default: deepseek-chat)
-  SMTP_USER       - Your email address (used as both sender and recipient)
-  SMTP_PASSWORD   - SMTP password or app-specific password
-  SMTP_SERVER     - SMTP server (default: smtp.qq.com)
-  SMTP_PORT       - SMTP port (default: 465)
+  MAIL            - Your email address (used as both sender and recipient)
+  MAIL_PW         - SMTP password or app-specific password
+  MAIL_SERVER     - SMTP server (default: smtp.qq.com)
+  MAIL_PORT       - SMTP port (default: 465)
   MAX_PAPERS      - Max papers to fetch per run (default: 8)
 """
 
@@ -25,9 +25,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from xml.etree import ElementTree
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
-from urllib.error import URLError
+
+import requests
 
 # ── Configuration ──────────────────────────────────────────────────────
 
@@ -42,233 +41,153 @@ SMTP_PASSWORD  = os.environ.get("MAIL_PW")
 
 MAX_PAPERS     = int(os.environ.get("MAX_PAPERS", "8"))
 
-# ── Search query ───────────────────────────────────────────────────────
-# arXiv search query targeting organic chemistry papers
-ARXIV_QUERY = (
-    '(cat:chem.OT OR cat:q-bio.BM OR cat:physics.chem-ph) AND ('
-    + ' OR '.join([
-        'abs:"organic synthesis"',
-        'abs:"total synthesis"',
-        'abs:"reaction mechanism"',
-        'abs:"catalysis"',
-        'abs:"medicinal chemistry"',
-        'abs:"DNA-encoded library"',
-        'abs:"DEL"',
-        'abs:"C-H activation"',
-        'abs:"cross-coupling"',
-        'abs:"enantioselective"',
-        'abs:"organocatalysis"',
-        'abs:"photocatalysis"',
-        'abs:"drug discovery"',
-    ]) + ')'
-)
-
-PUBMED_QUERY = (
-    '('
-    + ' OR '.join([
-        '"organic synthesis"[Title/Abstract]',
-        '"total synthesis"[Title/Abstract]',
-        '"reaction mechanism"[Title/Abstract]',
-        '"DNA-encoded library"[Title/Abstract]',
-        '"medicinal chemistry"[Title/Abstract]',
-        '"drug discovery"[Title/Abstract]',
-        '"C-H activation"[Title/Abstract]',
-        '"enantioselective"[Title/Abstract]',
-        '"organocatalysis"[Title/Abstract]',
-    ])
-    + ') AND ("2026"[Date - Publication] : "3000"[Date - Publication])'
-)
+# ── Search keywords ────────────────────────────────────────────────────
+# These are combined with OR and searched in Title/Abstract on PubMed
+KEYWORDS = [
+    "organic synthesis",
+    "total synthesis",
+    "reaction mechanism",
+    "catalysis",
+    "medicinal chemistry",
+    "DNA-encoded library",
+    "DEL",
+    "C-H activation",
+    "cross-coupling",
+    "enantioselective",
+    "organocatalysis",
+    "photocatalysis",
+    "drug discovery",
+]
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {msg}")
 
-def fetch_url(url, headers=None, retries=2):
-    """Fetch a URL with retries. Returns response text or None."""
-    last_error = None
-    for attempt in range(retries + 1):
-        try:
-            req = Request(url, headers=headers or {"User-Agent": "Mozilla/5.0 (compatible; DailyLitDigest/1.0)"})
-            with urlopen(req, timeout=30) as resp:
-                return resp.read().decode("utf-8")
-        except URLError as e:
-            last_error = e
-            if attempt < retries:
-                log(f"  ⚠  Attempt {attempt + 1} failed: {e}. Retrying...")
-    log(f"  ⚠  All attempts failed: {last_error}")
-    return None
+def truncate_abstract(abstract, max_words=150):
+    if not abstract:
+        return "No abstract available"
+    words = abstract.split()
+    if len(words) > max_words:
+        return " ".join(words[:max_words]) + "..."
+    return abstract
 
-# ── arXiv fetcher ──────────────────────────────────────────────────────
-
-def fetch_arxiv():
-    """
-    Fetch recent papers from arXiv using the arXiv API.
-    Returns list of dicts: {title, authors, summary, link, published}
-    """
-    # Build query params
-    params = urlencode({
-        "search_query": ARXIV_QUERY,
-        "sortBy": "submittedDate",
-        "sortOrder": "descending",
-        "max_results": MAX_PAPERS,
-    })
-
-    # Try HTTPS first, then HTTP as fallback
-    urls_to_try = [
-        f"https://export.arxiv.org/api/query?{params}",
-        f"http://export.arxiv.org/api/query?{params}",
-    ]
-
-    xml_text = None
-    used_url = ""
-    for url in urls_to_try:
-        log(f"Fetching arXiv ({url[:120]}...)")
-        xml_text = fetch_url(url)
-        if xml_text:
-            used_url = url
-            break
-        log("  Trying alternative endpoint...")
-
-    if not xml_text:
-        return []
-
-    ns = {"a": "http://www.w3.org/2005/Atom",
-          "opensearch": "http://a9.com/-/spec/opensearch/1.1/"}
-    root = ElementTree.fromstring(xml_text)
-    total = int(root.find(".//opensearch:totalResults", ns).text)
-    log(f"  Found {total} results on arXiv")
-
-    papers = []
-    for entry in root.findall("a:entry", ns):
-        title = entry.find("a:title", ns).text.strip().replace("\n", " ")
-        summary = entry.find("a:summary", ns).text.strip().replace("\n", " ")
-        published = entry.find("a:published", ns).text[:10]
-
-        authors = []
-        for author in entry.findall("a:author", ns):
-            name = author.find("a:name", ns)
-            if name is not None:
-                authors.append(name.text)
-
-        link = ""
-        for link_el in entry.findall("a:link", ns):
-            if link_el.get("rel") == "alternate" or link_el.get("title") == "pdf":
-                link = link_el.get("href", "")
-                break
-        if not link:
-            link_el = entry.find("a:link", ns)
-            if link_el is not None:
-                link = link_el.get("href", "")
-
-        papers.append({
-            "title": title,
-            "authors": authors,
-            "summary": summary[:2000],
-            "link": link,
-            "published": published,
-            "source": "arXiv"
-        })
-    return papers
-
-# ── PubMed fetcher (via NCBI E-utilities) ─────────────────────────────
+# ── PubMed fetcher ─────────────────────────────────────────────────────
 
 def fetch_pubmed():
     """
-    Fetch recent papers from PubMed via NCBI E-utilities.
+    Search PubMed for recent papers matching keywords.
+    Uses NCBI E-utilities (no API key required for basic use).
     """
-    log("Fetching PubMed papers...")
+    today = datetime.now()
+    # Search papers from last 30 days
+    start_date = today - timedelta(days=30)
+    date_query = '(' + f'"{start_date.strftime("%Y/%m/%d")}"[PDAT] : "{today.strftime("%Y/%m/%d")}"[PDAT]' + ')'
 
-    # Step 1: Search
-    search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?" + urlencode({
+    # Build keyword query: ("keyword1"[Title/Abstract] OR "keyword2"[Title/Abstract] ...)
+    keyword_query = '(' + ' OR '.join(f'"{kw}"[Title/Abstract]' for kw in KEYWORDS) + ')'
+
+    full_query = f'{keyword_query} AND {date_query}'
+
+    log(f"Searching PubMed...")
+
+    # Step 1: Search for IDs
+    search_params = {
         "db": "pubmed",
-        "term": PUBMED_QUERY,
+        "term": full_query,
+        "retmode": "xml",
         "retmax": str(MAX_PAPERS),
         "sort": "date",
-        "retmode": "json",
-        "datetype": "pdat",
-        "mindate": "2026/01/01",
-        "maxdate": "2026/12/31",
-    })
-    result = fetch_url(search_url)
-    if not result:
+    }
+
+    try:
+        resp = requests.get(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            params=search_params,
+            timeout=30,
+            headers={"User-Agent": "DailyLitDigest/1.0"},
+        )
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        log(f"  ⚠  PubMed search failed: {e}")
         return []
 
-    data = json.loads(result)
-    ids = data.get("esearchresult", {}).get("idlist", [])
-    if not ids:
-        log("  No new papers found on PubMed")
+    root = ElementTree.fromstring(resp.content)
+    id_list = [id_elem.text for id_elem in root.findall(".//Id")]
+
+    if not id_list:
+        log("  No papers found in the last 30 days")
         return []
 
-    log(f"  Found {len(ids)} papers on PubMed")
+    log(f"  Found {len(id_list)} papers")
 
-    # Step 2: Fetch details
-    fetch_url_e = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?" + urlencode({
-        "db": "pubmed",
-        "id": ",".join(ids),
-        "retmode": "xml",
-        "rettype": "abstract",
-    })
-    xml_text = fetch_url(fetch_url_e)
-    if not xml_text:
-        return []
-
+    # Step 2: Fetch details for each paper
     papers = []
-    root = ElementTree.fromstring(xml_text)
-    for article in root.findall(".//PubmedArticle"):
-        title_el = article.find(".//ArticleTitle")
-        title = "".join(title_el.itertext()) if title_el is not None else "No title"
+    for pmid in id_list:
+        try:
+            # Get summary (title, journal, date)
+            summary_resp = requests.get(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+                params={"db": "pubmed", "id": pmid, "retmode": "xml"},
+                timeout=30,
+                headers={"User-Agent": "DailyLitDigest/1.0"},
+            )
+            summary_resp.raise_for_status()
+            summary_root = ElementTree.fromstring(summary_resp.content)
 
-        abstract_el = article.find(".//AbstractText")
-        summary = "".join(abstract_el.itertext()) if abstract_el is not None else "No abstract"
+            title = summary_root.findtext('.//Item[@Name="Title"]')
+            if not title:
+                continue
 
-        pmid = article.find(".//PMID")
-        pmid_text = pmid.text if pmid is not None else ""
+            journal = summary_root.findtext('.//Item[@Name="Source"]', "Unknown")
+            pub_date = summary_root.findtext('.//Item[@Name="PubDate"]', "")
 
-        authors = []
-        for author in article.findall(".//Author"):
-            last = author.find("LastName")
-            fore = author.find("ForeName")
-            if last is not None:
-                name = f"{last.text}"
-                if fore is not None:
-                    name = f"{fore.text} {name}"
-                authors.append(name)
+            # Get abstract
+            abstract_text = None
+            try:
+                abstract_resp = requests.get(
+                    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                    params={"db": "pubmed", "id": pmid, "retmode": "xml"},
+                    timeout=30,
+                    headers={"User-Agent": "DailyLitDigest/1.0"},
+                )
+                abstract_resp.raise_for_status()
+                abstract_root = ElementTree.fromstring(abstract_resp.content)
+                abstract_text = abstract_root.findtext('.//AbstractText')
+            except Exception:
+                pass
 
-        pub_date_el = article.find(".//PubDate")
-        published = "".join(pub_date_el.itertext()) if pub_date_el is not None else ""
+            papers.append({
+                "title": title.strip(),
+                "journal": journal.strip(),
+                "date": pub_date.strip(),
+                "abstract": truncate_abstract(abstract_text),
+                "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                "pmid": pmid,
+            })
 
-        papers.append({
-            "title": title.strip(),
-            "authors": authors,
-            "summary": summary.strip()[:2000],
-            "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid_text}/",
-            "published": published.strip(),
-            "source": "PubMed"
-        })
+        except requests.RequestException as e:
+            log(f"  ⚠  Failed to fetch details for PMID {pmid}: {e}")
+            continue
+
     return papers
 
 # ── LLM summarization ──────────────────────────────────────────────────
 
 def summarize_with_llm(papers):
-    """
-    Send papers to DeepSeek/LLM for summarization.
-    Returns the markdown digest string.
-    """
+    """Send papers to DeepSeek/LLM for summarization. Returns markdown digest."""
     if not papers:
         return "No papers found today."
 
-    # Build the prompt
     papers_text = ""
     for i, p in enumerate(papers, 1):
         papers_text += f"""
 --- Paper {i} ---
 Title: {p['title']}
-Authors: {', '.join(p['authors'][:5])}{' et al.' if len(p['authors']) > 5 else ''}
-Source: {p['source']}
-Published: {p['published']}
+Journal: {p['journal']}
+Published: {p['date']}
 Link: {p['link']}
-Abstract: {p['summary']}
+Abstract: {p['abstract']}
 """
 
     system_prompt = """You are a chemistry research assistant. Generate a daily literature digest in ENGLISH.
@@ -277,59 +196,56 @@ For each paper, provide:
 1. **Title** (linked)
 2. **Why this matters** — 1-2 sentences on significance
 3. **Key contribution** — 2-3 sentences summarizing the main finding
-4. **Relevance** — which area it relates to (organic synthesis, total synthesis, reaction mechanism, medicinal chemistry, DEL, catalysis, etc.)
+4. **Relevance** — area (organic synthesis, total synthesis, reaction mechanism, medicinal chemistry, DEL, catalysis, etc.)
 
-Format in clean Markdown. Group related papers if possible. End with a "Quick Take" section — your overall assessment of what's most interesting today."""
+Format in clean Markdown. End with a "Quick Take" section — overall assessment."""
 
-    user_prompt = f"Here are today's papers from arXiv and PubMed. Generate a digest.\n\n{papers_text}"
+    user_prompt = f"Here are today's papers from PubMed. Generate a digest.\n\n{papers_text}"
 
     log(f"Sending {len(papers)} papers to LLM ({LLM_MODEL}) for summarization...")
 
-    payload = json.dumps({
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 4096,
-    }).encode("utf-8")
-
-    resp = fetch_url(
-        f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {LLM_API_KEY}",
-        },
-    )
-    if not resp:
-        # Fallback: generate a simple digest without LLM
-        return fallback_digest(papers)
-
     try:
-        data = json.loads(resp)
+        resp = requests.post(
+            f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {LLM_API_KEY}",
+            },
+            json={
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4096,
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
         content = data["choices"][0]["message"]["content"]
         log("  LLM summarization complete")
         return content
-    except (KeyError, IndexError, json.JSONDecodeError) as e:
-        log(f"  ⚠  LLM response parse error: {e}")
+    except Exception as e:
+        log(f"  ⚠  LLM API error: {e}")
         return fallback_digest(papers)
 
+
 def fallback_digest(papers):
-    """Generate a simple digest without LLM (in case API call fails)."""
+    """Generate a simple digest without LLM."""
     lines = ["# Daily Literature Digest", f"**{datetime.now():%B %d, %Y}**\n"]
     for p in papers:
         lines.append(f"## {p['title']}")
-        lines.append(f"**Authors:** {', '.join(p['authors'][:3])}")
-        lines.append(f"**Source:** {p['source']} | **Published:** {p['published']}")
+        lines.append(f"*{p['journal']}* | {p['date']}")
         lines.append(f"**Link:** {p['link']}")
-        lines.append(f"\n{p['summary'][:500]}...\n")
+        lines.append(f"\n{p['abstract']}\n")
     return "\n".join(lines)
 
 # ── Email sending ────────────────────────────────────────────────────
 
 def send_email(digest_md):
-    """Send the digest via SMTP. Sends to yourself (SMTP_USER)."""
+    """Send the digest via SMTP. Sends to yourself."""
     if not all([SMTP_SERVER, SMTP_USER, SMTP_PASSWORD]):
         log("⚠  SMTP not fully configured, printing digest instead")
         print(digest_md)
@@ -344,10 +260,8 @@ def send_email(digest_md):
     msg["To"] = SMTP_USER
     msg["Date"] = email.utils.formatdate(localtime=True)
 
-    # Plain text version
     msg.attach(MIMEText(digest_md, "plain", "utf-8"))
 
-    # HTML version
     html = digest_md.replace("\n", "<br>\n")
     html_body = f"""<html><body style="font-family: -apple-system, sans-serif; max-width: 720px; margin: 0 auto;">
 {html}
@@ -368,24 +282,8 @@ def send_email(digest_md):
         log(f"✅ Email sent to {SMTP_USER}")
     except Exception as e:
         log(f"⚠  Failed to send email: {e}")
-        # Print digest anyway so it shows in GitHub Actions logs
         print("\n=== DIGEST (email failed) ===")
         print(digest_md)
-
-# ── Deduplication ──────────────────────────────────────────────────────
-
-def deduplicate(papers):
-    """Remove papers with very similar titles."""
-    seen = set()
-    unique = []
-    for p in papers:
-        key = p["title"].lower().strip()
-        # Simple dedup: keep first 80 chars as key
-        short_key = key[:80]
-        if short_key not in seen:
-            seen.add(short_key)
-            unique.append(p)
-    return unique
 
 # ── Main ───────────────────────────────────────────────────────────────
 
@@ -393,36 +291,25 @@ def main():
     log("Starting daily literature digest...")
 
     if not LLM_API_KEY:
-        log("⚠  LLM_API_KEY not set. Set up secrets before running.")
+        log("⚠  LLM_API_KEY not set. Set it up in GitHub Secrets.")
         sys.exit(1)
 
-    # 1. Fetch papers from both sources
-    arxiv_papers = fetch_arxiv()
-    pubmed_papers = fetch_pubmed()
+    papers = fetch_pubmed()
 
-    all_papers = deduplicate(arxiv_papers + pubmed_papers)
-
-    if not all_papers:
-        log("No papers found from any source.")
-        # Still send an email so you know it ran
-        digest = "# Daily Literature Digest\n\nNo new papers found matching your criteria today."
-        send_email(digest)
+    if not papers:
+        log("No papers found.")
+        send_email("# Daily Literature Digest\n\nNo papers found matching your criteria today.")
         return
 
-    # Limit to MAX_PAPERS
-    all_papers = all_papers[:MAX_PAPERS]
-    log(f"Total unique papers to summarize: {len(all_papers)}")
+    log(f"Total papers: {len(papers)}")
 
-    # 2. Summarize with LLM
-    digest = summarize_with_llm(all_papers)
+    digest = summarize_with_llm(papers)
 
-    # 3. Send email
     send_email(digest)
 
-    # 4. Print to logs for visibility
     print(digest)
-
     log("✅ Done!")
+
 
 if __name__ == "__main__":
     main()

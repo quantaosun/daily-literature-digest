@@ -1,2 +1,1 @@
-# No external dependencies needed — uses only Python stdlib
-# argparse, email, json, os, smtplib, sys, urllib, xml, datetime
+requests
