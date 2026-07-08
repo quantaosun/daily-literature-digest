@@ -31,14 +31,14 @@ from urllib.error import URLError
 
 # ── Configuration ──────────────────────────────────────────────────────
 
-LLM_API_KEY    = os.environ.get("LLM_API_KEY")
+LLM_API_KEY    = os.environ.get("LLM_KEY")
 LLM_BASE_URL   = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com")
 LLM_MODEL      = os.environ.get("LLM_MODEL", "deepseek-chat")
 
-SMTP_SERVER    = os.environ.get("SMTP_SERVER", "smtp.qq.com")
-SMTP_PORT      = int(os.environ.get("SMTP_PORT", "465"))
-SMTP_USER      = os.environ.get("SMTP_USER")
-SMTP_PASSWORD  = os.environ.get("SMTP_PASSWORD")
+SMTP_SERVER    = os.environ.get("MAIL_SERVER", "smtp.qq.com")
+SMTP_PORT      = int(os.environ.get("MAIL_PORT", "465"))
+SMTP_USER      = os.environ.get("MAIL")
+SMTP_PASSWORD  = os.environ.get("MAIL_PW")
 
 MAX_PAPERS     = int(os.environ.get("MAX_PAPERS", "8"))
 

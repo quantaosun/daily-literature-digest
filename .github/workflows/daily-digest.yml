@@ -32,12 +32,12 @@ jobs:
 
       - name: Run literature digest
         env:
-          LLM_API_KEY:    ${{ secrets.LLM_API_KEY }}
-          LLM_BASE_URL:   ${{ secrets.LLM_BASE_URL || 'https://api.deepseek.com' }}
-          LLM_MODEL:      ${{ secrets.LLM_MODEL || 'deepseek-chat' }}
-          SMTP_SERVER:    ${{ secrets.SMTP_SERVER || 'smtp.qq.com' }}
-          SMTP_PORT:      ${{ secrets.SMTP_PORT || '465' }}
-          SMTP_USER:      ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD:  ${{ secrets.SMTP_PASSWORD }}
-          MAX_PAPERS:     ${{ github.event.inputs.max_papers || '8' }}
+          LLM_KEY:       ${{ secrets.LLM_KEY }}
+          LLM_BASE_URL:  ${{ secrets.LLM_BASE_URL || 'https://api.deepseek.com' }}
+          LLM_MODEL:     ${{ secrets.LLM_MODEL || 'deepseek-chat' }}
+          MAIL_SERVER:   ${{ secrets.MAIL_SERVER || 'smtp.qq.com' }}
+          MAIL_PORT:     ${{ secrets.MAIL_PORT || '465' }}
+          MAIL:          ${{ secrets.MAIL }}
+          MAIL_PW:       ${{ secrets.MAIL_PW }}
+          MAX_PAPERS:    ${{ github.event.inputs.max_papers || '8' }}
         run: python digest.py
