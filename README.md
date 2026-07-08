@@ -106,19 +106,101 @@ If using a non-QQ provider, add two more secrets:
 
 ## Customize Keywords
 
-Edit `KEYWORDS` in `digest.py` (around line 47):
+You can change what topics the digest searches for by editing `KEYWORDS` in `digest.py`.
+
+### Examples for different research areas
+
+<details>
+<summary>🧪 Chemistry (default)</summary>
 
 ```python
 KEYWORDS = [
     "organic synthesis",
     "total synthesis",
-    # add your own:
-    "your keyword here",
-    # or remove ones you don't need
+    "reaction mechanism",
+    "catalysis",
+    "medicinal chemistry",
+    "DNA-encoded library",
+    "C-H activation",
+    "cross-coupling",
+    "enantioselective",
+    "organocatalysis",
+    "photocatalysis",
+    "drug discovery",
 ]
 ```
+</details>
 
-Then commit and push. The next run will use your new keywords.
+<details>
+<summary>🧬 Biology & Biomedical</summary>
+
+```python
+KEYWORDS = [
+    "CRISPR",
+    "gene editing",
+    "protein structure",
+    "single cell",
+    "immunotherapy",
+    "cell signaling",
+    "proteomics",
+    "genomics",
+    "RNA biology",
+]
+```
+</details>
+
+<details>
+<summary>🤖 Machine Learning & AI</summary>
+
+```python
+KEYWORDS = [
+    "large language model",
+    "deep learning",
+    "reinforcement learning",
+    "computer vision",
+    "natural language processing",
+    "neural network",
+    "transformer",
+    "diffusion model",
+    "representation learning",
+]
+```
+</details>
+
+<details>
+<summary>🔬 Physics & Materials</summary>
+
+```python
+KEYWORDS = [
+    "quantum computing",
+    "topological insulator",
+    "2D materials",
+    "superconductivity",
+    "photovoltaic",
+    "battery",
+    "catalyst",
+    "nanomaterials",
+    "metamaterial",
+]
+```
+</details>
+
+### How to apply changes
+
+1. Open `digest.py` in your editor
+2. Find the `KEYWORDS` list (around line 47)
+3. Replace with your own keywords
+4. Save, commit, and push to GitHub:
+
+```bash
+git add digest.py
+git commit -m "Change tracked topics to my field"
+git push
+```
+
+The next scheduled run (or manual trigger) will use your new keywords.
+
+> 💡 **Tip:** Each keyword is searched in titles and abstracts with `OR` logic. More keywords = broader coverage. Use specific terms for better relevance.
 
 ---
 
