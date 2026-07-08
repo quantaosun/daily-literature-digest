@@ -84,14 +84,20 @@ PUBMED_QUERY = (
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {msg}")
 
-def fetch_url(url, headers=None):
-    req = Request(url, headers=headers or {"User-Agent": "DailyLitDigest/1.0"})
-    try:
-        with urlopen(req, timeout=30) as resp:
-            return resp.read().decode("utf-8")
-    except URLError as e:
-        log(f"  ⚠  Network error: {e}")
-        return None
+def fetch_url(url, headers=None, retries=2):
+    """Fetch a URL with retries. Returns response text or None."""
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            req = Request(url, headers=headers or {"User-Agent": "Mozilla/5.0 (compatible; DailyLitDigest/1.0)"})
+            with urlopen(req, timeout=30) as resp:
+                return resp.read().decode("utf-8")
+        except URLError as e:
+            last_error = e
+            if attempt < retries:
+                log(f"  ⚠  Attempt {attempt + 1} failed: {e}. Retrying...")
+    log(f"  ⚠  All attempts failed: {last_error}")
+    return None
 
 # ── arXiv fetcher ──────────────────────────────────────────────────────
 
@@ -100,17 +106,30 @@ def fetch_arxiv():
     Fetch recent papers from arXiv using the arXiv API.
     Returns list of dicts: {title, authors, summary, link, published}
     """
-    url = (
-        "https://export.arxiv.org/api/query?"
-        + urlencode({
-            "search_query": ARXIV_QUERY,
-            "sortBy": "submittedDate",
-            "sortOrder": "descending",
-            "max_results": MAX_PAPERS,
-        })
-    )
-    log(f"Fetching arXiv: {url[:150]}...")
-    xml_text = fetch_url(url)
+    # Build query params
+    params = urlencode({
+        "search_query": ARXIV_QUERY,
+        "sortBy": "submittedDate",
+        "sortOrder": "descending",
+        "max_results": MAX_PAPERS,
+    })
+
+    # Try HTTPS first, then HTTP as fallback
+    urls_to_try = [
+        f"https://export.arxiv.org/api/query?{params}",
+        f"http://export.arxiv.org/api/query?{params}",
+    ]
+
+    xml_text = None
+    used_url = ""
+    for url in urls_to_try:
+        log(f"Fetching arXiv ({url[:120]}...)")
+        xml_text = fetch_url(url)
+        if xml_text:
+            used_url = url
+            break
+        log("  Trying alternative endpoint...")
+
     if not xml_text:
         return []
 
