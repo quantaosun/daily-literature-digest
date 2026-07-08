@@ -1,41 +1,93 @@
 # Daily Literature Digest
 
-每天自动检索最新化学文献，用 LLM 生成英文摘要，发到自己邮箱。
+Automatically search PubMed for latest chemistry papers, summarize them with LLM, and email yourself a daily digest.
 
-**追踪领域：** 有机反应机理、有机合成、全合成、药物化学、DEL 化合物库
+**Tracked topics:** organic reaction mechanisms, organic synthesis, total synthesis, medicinal chemistry, DEL (DNA-Encoded Library)
 
-**数据源：** arXiv + PubMed
+**Data source:** PubMed (NCBI E-utilities, free, no API key required)
 
-**费用：** GitHub Actions 免费 + DeepSeek API 一天几分钱
+**Cost:** GitHub Actions (free) + DeepSeek API (~¥0.01/day)
 
-## 配置方式（只需要 3 个 Secrets）
+---
 
-去 GitHub 仓库 → **Settings → Secrets and variables → Actions** 添加：
+## Quick Start
 
-| Secret | 说明 |
-|--------|------|
-| `LLM_KEY` | DeepSeek API Key（去 [platform.deepseek.com](https://platform.deepseek.com) 注册） |
-| `MAIL` | 你的邮箱地址 |
-| `MAIL_PW` | SMTP 授权码（见下方） |
+### 1. Fork this repo
 
-可选（有默认值，不用配也行）：
-| Secret | 默认值 |
-|--------|--------|
+Click the Fork button on GitHub.
+
+### 2. Add 3 Secrets
+
+Go to **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Description |
+|--------|-------------|
+| `LLM_API_KEY` | DeepSeek API Key from [platform.deepseek.com](https://platform.deepseek.com) |
+| `MAIL` | Your email address (sender & recipient) |
+| `MAIL_PW` | SMTP password / app-specific password |
+
+Optional (have defaults, skip if not needed):
+| Secret | Default |
+|--------|---------|
 | `MAIL_SERVER` | `smtp.qq.com` |
 | `MAIL_PORT` | `465` |
 | `LLM_BASE_URL` | `https://api.deepseek.com` |
 | `LLM_MODEL` | `deepseek-chat` |
 
-## QQ邮箱 获取 SMTP 授权码
+### 3. Run
 
-1. 登录 QQ邮箱 → 设置 → 账户
-2. 开启 **POP3/SMTP 服务**
-3. 生成的 **授权码** 填入 `MAIL_PW`
+The workflow runs daily at **9:00 AM Beijing Time (1:00 UTC)**. You can also manually trigger it:
 
-其他邮箱（163、Gmail 等）同理，改 `MAIL_SERVER` 和 `MAIL_PORT` 即可。
+**Actions → Daily Literature Digest → Run workflow**
 
-## 启动
+---
 
-配置好 Secrets 后，每天 **北京时间 9:00** 自动运行。也可以去 **Actions → Daily Literature Digest → Run workflow** 手动触发测试。
+## Customize Keywords
 
-邮件会自动发到你的 `MAIL` 邮箱。
+Edit `KEYWORDS` in `digest.py` (around line 47):
+
+```python
+KEYWORDS = [
+    "organic synthesis",
+    "total synthesis",
+    "reaction mechanism",
+    # add or remove keywords here
+]
+```
+
+---
+
+## How It Works
+
+```
+PubMed API (free, no key)
+       ↓
+  Fetch papers matching keywords from last 60 days
+       ↓
+  Summarize each paper with DeepSeek LLM (English)
+       ↓
+  Send email digest to yourself via SMTP
+```
+
+**Tech stack:** Python 3.11 + `requests` | GitHub Actions | PubMed E-utilities | DeepSeek API
+
+## Email SMTP Setup
+
+### QQ Mail
+1. Login to [mail.qq.com](https://mail.qq.com) → Settings → Account
+2. Enable **POP3/SMTP service**
+3. Use the generated authorization code as `MAIL_PW`
+
+### Other Providers
+| Provider | SMTP Server | Port |
+|----------|-------------|------|
+| QQ Mail | `smtp.qq.com` | 465 |
+| 163 Mail | `smtp.163.com` | 465 |
+| Gmail | `smtp.gmail.com` | 587 |
+| Outlook | `smtp-mail.outlook.com` | 587 |
+
+---
+
+## License
+
+MIT
