@@ -9,12 +9,10 @@ Configure via environment variables (set in GitHub Secrets):
   LLM_API_KEY     - DeepSeek or OpenAI-compatible API key
   LLM_BASE_URL    - API base URL (default: https://api.deepseek.com)
   LLM_MODEL       - Model name (default: deepseek-chat)
+  SMTP_USER       - Your email address (used as both sender and recipient)
+  SMTP_PASSWORD   - SMTP password or app-specific password
   SMTP_SERVER     - SMTP server (default: smtp.qq.com)
   SMTP_PORT       - SMTP port (default: 465)
-  SMTP_USER       - SMTP username (your email address)
-  SMTP_PASSWORD   - SMTP password or app-specific password
-  EMAIL_TO        - Recipient email address
-  EMAIL_FROM      - Sender email address (same as SMTP_USER typically)
   MAX_PAPERS      - Max papers to fetch per run (default: 8)
 """
 
@@ -41,8 +39,6 @@ SMTP_SERVER    = os.environ.get("SMTP_SERVER", "smtp.qq.com")
 SMTP_PORT      = int(os.environ.get("SMTP_PORT", "465"))
 SMTP_USER      = os.environ.get("SMTP_USER")
 SMTP_PASSWORD  = os.environ.get("SMTP_PASSWORD")
-EMAIL_TO       = os.environ.get("EMAIL_TO")
-EMAIL_FROM     = os.environ.get("EMAIL_FROM", SMTP_USER)
 
 MAX_PAPERS     = int(os.environ.get("MAX_PAPERS", "8"))
 
@@ -311,8 +307,8 @@ def fallback_digest(papers):
 # ── Email sending ────────────────────────────────────────────────────
 
 def send_email(digest_md):
-    """Send the digest via SMTP."""
-    if not all([SMTP_SERVER, SMTP_USER, SMTP_PASSWORD, EMAIL_TO, EMAIL_FROM]):
+    """Send the digest via SMTP. Sends to yourself (SMTP_USER)."""
+    if not all([SMTP_SERVER, SMTP_USER, SMTP_PASSWORD]):
         log("⚠  SMTP not fully configured, printing digest instead")
         print(digest_md)
         return
@@ -322,8 +318,8 @@ def send_email(digest_md):
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
-    msg["To"] = EMAIL_TO
+    msg["From"] = SMTP_USER
+    msg["To"] = SMTP_USER
     msg["Date"] = email.utils.formatdate(localtime=True)
 
     # Plain text version
@@ -345,9 +341,9 @@ def send_email(digest_md):
             server.starttls()
 
         server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(EMAIL_FROM, [EMAIL_TO], msg.as_string())
+        server.sendmail(SMTP_USER, [SMTP_USER], msg.as_string())
         server.quit()
-        log(f"✅ Email sent to {EMAIL_TO}")
+        log(f"✅ Email sent to {SMTP_USER}")
     except Exception as e:
         log(f"⚠  Failed to send email: {e}")
         # Print digest anyway so it shows in GitHub Actions logs
