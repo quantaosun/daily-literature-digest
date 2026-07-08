@@ -80,8 +80,8 @@ def fetch_pubmed():
     Uses NCBI E-utilities (no API key required for basic use).
     """
     today = datetime.now()
-    # Search papers from last 30 days
-    start_date = today - timedelta(days=30)
+    # Search papers from last 60 days (wider window = more results)
+    start_date = today - timedelta(days=60)
     date_query = '(' + f'"{start_date.strftime("%Y/%m/%d")}"[PDAT] : "{today.strftime("%Y/%m/%d")}"[PDAT]' + ')'
 
     # Build keyword query: ("keyword1"[Title/Abstract] OR "keyword2"[Title/Abstract] ...)
@@ -89,7 +89,7 @@ def fetch_pubmed():
 
     full_query = f'{keyword_query} AND {date_query}'
 
-    log(f"Searching PubMed...")
+    log(f"Searching PubMed (past 60 days)...")
 
     # Step 1: Search for IDs
     search_params = {
@@ -116,10 +116,10 @@ def fetch_pubmed():
     id_list = [id_elem.text for id_elem in root.findall(".//Id")]
 
     if not id_list:
-        log("  No papers found in the last 30 days")
+        log("  No papers found in the last 60 days")
         return []
 
-    log(f"  Found {len(id_list)} papers")
+    log(f"  Found {len(id_list)} papers (first: {id_list[0]})")
 
     # Step 2: Fetch details for each paper
     papers = []
