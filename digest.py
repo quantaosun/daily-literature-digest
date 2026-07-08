@@ -31,7 +31,7 @@ from urllib.error import URLError
 
 # ── Configuration ──────────────────────────────────────────────────────
 
-LLM_API_KEY    = os.environ.get("LLM_KEY")
+LLM_API_KEY    = os.environ.get("LLM_API_KEY")
 LLM_BASE_URL   = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com")
 LLM_MODEL      = os.environ.get("LLM_MODEL", "deepseek-chat")
 
