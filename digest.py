@@ -44,37 +44,40 @@ MAX_PAPERS     = int(os.environ.get("MAX_PAPERS", "8"))
 
 # ── Search query ───────────────────────────────────────────────────────
 # arXiv search query targeting organic chemistry papers
-ARXIV_QUERY = '('.join([
-    'cat:chem.OT',  # Organic Chemistry (the main arXiv chemistry category)
-    'cat:q-bio.BM', # Biomolecules (for DEL / medicinal chemistry)
-    'cat:physics.chem-ph',  # Chemical Physics (for reaction mechanisms)
-]) + ') AND ('.join([
-    'abs:"organic synthesis"',
-    'abs:"total synthesis"',
-    'abs:"reaction mechanism"',
-    'abs:"catalysis"',
-    'abs:"medicinal chemistry"',
-    'abs:"DNA-encoded library"',
-    'abs:"DEL"',
-    'abs:"C-H activation"',
-    'abs:"cross-coupling"',
-    'abs:"enantioselective"',
-    'abs:"organocatalysis"',
-    'abs:"photocatalysis"',
-    'abs:"drug discovery"',
-]) + ')'
+ARXIV_QUERY = (
+    '(cat:chem.OT OR cat:q-bio.BM OR cat:physics.chem-ph) AND ('
+    + ' OR '.join([
+        'abs:"organic synthesis"',
+        'abs:"total synthesis"',
+        'abs:"reaction mechanism"',
+        'abs:"catalysis"',
+        'abs:"medicinal chemistry"',
+        'abs:"DNA-encoded library"',
+        'abs:"DEL"',
+        'abs:"C-H activation"',
+        'abs:"cross-coupling"',
+        'abs:"enantioselective"',
+        'abs:"organocatalysis"',
+        'abs:"photocatalysis"',
+        'abs:"drug discovery"',
+    ]) + ')'
+)
 
-PUBMED_QUERY = '('.join([
-    '"organic synthesis"[Title/Abstract]',
-    '"total synthesis"[Title/Abstract]',
-    '"reaction mechanism"[Title/Abstract]',
-    '"DNA-encoded library"[Title/Abstract]',
-    '"medicinal chemistry"[Title/Abstract]',
-    '"drug discovery"[Title/Abstract]',
-    '"C-H activation"[Title/Abstract]',
-    '"enantioselective"[Title/Abstract]',
-    '"organocatalysis"[Title/Abstract]',
-]) + ') AND ("2026"[Date - Publication] : "3000"[Date - Publication])'
+PUBMED_QUERY = (
+    '('
+    + ' OR '.join([
+        '"organic synthesis"[Title/Abstract]',
+        '"total synthesis"[Title/Abstract]',
+        '"reaction mechanism"[Title/Abstract]',
+        '"DNA-encoded library"[Title/Abstract]',
+        '"medicinal chemistry"[Title/Abstract]',
+        '"drug discovery"[Title/Abstract]',
+        '"C-H activation"[Title/Abstract]',
+        '"enantioselective"[Title/Abstract]',
+        '"organocatalysis"[Title/Abstract]',
+    ])
+    + ') AND ("2026"[Date - Publication] : "3000"[Date - Publication])'
+)
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -106,7 +109,7 @@ def fetch_arxiv():
             "max_results": MAX_PAPERS,
         })
     )
-    log("Fetching arXiv papers...")
+    log(f"Fetching arXiv: {url[:150]}...")
     xml_text = fetch_url(url)
     if not xml_text:
         return []
