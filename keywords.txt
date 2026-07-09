@@ -6,10 +6,7 @@
 organic synthesis
 total synthesis
 reaction mechanism
-catalysis
 medicinal chemistry
-DNA-encoded library
-DEL
 C-H activation
 cross-coupling
 enantioselective
