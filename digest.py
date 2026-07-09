@@ -2,19 +2,13 @@
 """
 daily-literature-digest
 =======================
-Searches PubMed for latest chemistry papers matching your keywords,
-summarizes them via DeepSeek LLM, scores them by novelty and impact,
-and emails the digest with interactive HTML formatting and data visualizations.
+Searches PubMed for latest papers matching your keywords,
+summarizes them via LLM, scores them by novelty and impact,
+and emails the digest with interactive HTML formatting.
 
-Configure via environment variables (set in GitHub Secrets):
-  LLM_API_KEY     - DeepSeek or OpenAI-compatible API key (required)
-  LLM_BASE_URL    - API base URL (default: https://api.deepseek.com)
-  LLM_MODEL       - Model name (default: deepseek-chat)
-  MAIL            - Your email address (used as both sender and recipient)
-  MAIL_PW         - SMTP password or app-specific password
-  MAIL_SERVER     - SMTP server (default: smtp.qq.com)
-  MAIL_PORT       - SMTP port (default: 465)
-  MAX_PAPERS      - Max papers to fetch per run (default: 8)
+Configure via:
+  1. Environment variables (set in GitHub Secrets)
+  2. config.yaml file (edit directly for keywords/settings)
 """
 
 import os
@@ -23,6 +17,7 @@ import smtplib
 import email.utils
 import json
 import base64
+import yaml
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -30,22 +25,48 @@ from xml.etree import ElementTree
 
 import requests
 
-# ── Configuration ──────────────────────────────────────────────────────
+# ── Load configuration ──────────────────────────────────────────────────
+
+def load_config():
+    """Load configuration from config.yaml or use defaults."""
+    config_file = "config.yaml"
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            log(f"⚠  Failed to load config.yaml: {e}, using defaults")
+            return {}
+    return {}
+
+CONFIG = load_config()
+
+# ── Environment + Config merged settings ────────────────────────────────
 
 LLM_API_KEY    = os.environ.get("LLM_API_KEY")
-LLM_BASE_URL   = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com")
-LLM_MODEL      = os.environ.get("LLM_MODEL", "deepseek-chat")
+LLM_BASE_URL   = os.environ.get("LLM_BASE_URL") or \
+                 CONFIG.get("llm", {}).get("base_url") or \
+                 "https://api.deepseek.com"
+LLM_MODEL      = os.environ.get("LLM_MODEL") or \
+                 CONFIG.get("llm", {}).get("model") or \
+                 "deepseek-chat"
 
-SMTP_SERVER    = os.environ.get("MAIL_SERVER", "smtp.qq.com")
-SMTP_PORT      = int(os.environ.get("MAIL_PORT", "465"))
+SMTP_SERVER    = os.environ.get("MAIL_SERVER") or \
+                 CONFIG.get("email", {}).get("server") or \
+                 "smtp.qq.com"
+SMTP_PORT      = int(os.environ.get("MAIL_PORT") or \
+                     CONFIG.get("email", {}).get("port") or \
+                     "465")
 SMTP_USER      = os.environ.get("MAIL")
 SMTP_PASSWORD  = os.environ.get("MAIL_PW")
 
-MAX_PAPERS     = int(os.environ.get("MAX_PAPERS", "8"))
+MAX_PAPERS     = int(os.environ.get("MAX_PAPERS") or \
+                    CONFIG.get("max_papers") or "8")
+MIN_PAPERS     = int(CONFIG.get("min_papers") or "2")
+SEARCH_DAYS    = int(CONFIG.get("search_days") or "60")
 
-# ── Search keywords ────────────────────────────────────────────────────
-# These are combined with OR and searched in Title/Abstract on PubMed
-KEYWORDS = [
+# ── Search keywords from config.yaml ────────────────────────────────────
+KEYWORDS = CONFIG.get("keywords", [
     "organic synthesis",
     "total synthesis",
     "reaction mechanism",
@@ -59,7 +80,7 @@ KEYWORDS = [
     "organocatalysis",
     "photocatalysis",
     "drug discovery",
-]
+])
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -76,14 +97,18 @@ def truncate_abstract(abstract, max_words=150):
 
 # ── PubMed fetcher ─────────────────────────────────────────────────────
 
-def fetch_pubmed():
+def fetch_pubmed(days_back=None, attempt=1):
     """
-    Search PubMed for recent papers matching keywords.
+    Search PubMed for recent papers matching keywords with retry logic.
     Uses NCBI E-utilities (no API key required for basic use).
+    
+    If fewer than MIN_PAPERS are found, retries with a wider date range.
     """
+    if days_back is None:
+        days_back = SEARCH_DAYS
+    
     today = datetime.now()
-    # Search papers from last 60 days (wider window = more results)
-    start_date = today - timedelta(days=60)
+    start_date = today - timedelta(days=days_back)
     date_query = '(' + f'"{start_date.strftime("%Y/%m/%d")}"[PDAT] : "{today.strftime("%Y/%m/%d")}"[PDAT]' + ')'
 
     # Build keyword query: ("keyword1"[Title/Abstract] OR "keyword2"[Title/Abstract] ...)
@@ -91,14 +116,14 @@ def fetch_pubmed():
 
     full_query = f'{keyword_query} AND {date_query}'
 
-    log(f"Searching PubMed (past 60 days)...")
+    log(f"Searching PubMed (past {days_back} days)...")
 
     # Step 1: Search for IDs
     search_params = {
         "db": "pubmed",
         "term": full_query,
         "retmode": "xml",
-        "retmax": str(MAX_PAPERS),
+        "retmax": str(MAX_PAPERS * 2),  # Fetch more IDs to account for papers without abstracts
         "sort": "date_desc",
     }
 
@@ -118,14 +143,20 @@ def fetch_pubmed():
     id_list = [id_elem.text for id_elem in root.findall(".//Id")]
 
     if not id_list:
-        log("  No papers found in the last 60 days")
+        log(f"  No papers found in the last {days_back} days")
+        # Retry with wider date range if we haven't tried yet
+        if attempt < 3 and days_back < 365:
+            log(f"  Retrying with wider date range ({days_back * 2} days)...")
+            return fetch_pubmed(days_back=days_back * 2, attempt=attempt + 1)
         return []
 
-    log(f"  Found {len(id_list)} papers (first: {id_list[0]})")
+    log(f"  Found {len(id_list)} papers")
 
     # Step 2: Fetch details for each paper
     papers = []
     for pmid in id_list:
+        if len(papers) >= MAX_PAPERS:
+            break
         try:
             # Get summary (title, journal, date)
             summary_resp = requests.get(
@@ -649,14 +680,17 @@ def main():
     log("Starting daily literature digest...")
 
     if not LLM_API_KEY:
-        log("⚠  LLM_API_KEY not set. Set it up in GitHub Secrets.")
+        log("⚠  LLM_API_KEY not set. Set it in GitHub Secrets.")
         sys.exit(1)
 
     papers = fetch_pubmed()
 
-    if not papers:
-        log("No papers found.")
-        send_email("# Daily Literature Digest\n\nNo papers found matching your criteria today.", [])
+    if len(papers) < MIN_PAPERS:
+        if papers:
+            log(f"Only {len(papers)} paper(s) found, but MIN_PAPERS is set to {MIN_PAPERS}")
+        log(f"No papers found matching your keywords today.")
+        if not papers:
+            send_email("# 📬 Daily Literature Digest\n\nNo papers found matching your keywords today.\n\n---\n\nTry:\n- Adjusting your search keywords in config.yaml\n- Expanding search_days\n- Checking PubMed directly", [])
         return
 
     log(f"Total papers: {len(papers)}")
@@ -667,6 +701,7 @@ def main():
 
     print(digest)
     log("✅ Done!")
+
 
 
 if __name__ == "__main__":

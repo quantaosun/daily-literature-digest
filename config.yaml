@@ -1,0 +1,46 @@
+# ============================================
+# Daily Literature Digest Configuration
+# ============================================
+# Edit this file to customize your digest
+# No coding knowledge needed!
+
+# Search keywords (one per line)
+# PubMed will search for ANY of these in paper titles/abstracts
+keywords:
+  - organic synthesis
+  - total synthesis
+  - reaction mechanism
+  - catalysis
+  - medicinal chemistry
+  - DNA-encoded library
+  - DEL
+  - C-H activation
+  - cross-coupling
+  - enantioselective
+  - organocatalysis
+  - photocatalysis
+  - drug discovery
+
+# How many days back to search (1-365 days)
+# More days = more papers found (but older)
+search_days: 60
+
+# Target number of papers to fetch per digest
+# Actual count may be lower if fewer papers match your keywords
+max_papers: 8
+
+# Minimum papers to fetch (workflow will retry with wider search if fewer found)
+# Set to 2 to ensure at least 2 papers even if keywords have few recent results
+min_papers: 2
+
+# Email settings (only edit if using non-QQ providers)
+# Leave blank to use defaults
+email:
+  server: ""  # Leave empty for smtp.qq.com (default), or use smtp.163.com, smtp.gmail.com, etc.
+  port: ""    # Leave empty for 465 (default), or use 587 for Gmail/Outlook
+
+# LLM settings (only edit if using non-DeepSeek providers)
+# Leave blank to use defaults
+llm:
+  base_url: ""    # Leave empty for https://api.deepseek.com
+  model: ""       # Leave empty for deepseek-chat
