@@ -10,6 +10,8 @@
 
 > No servers to set up, no cron jobs to configure, no manual work. Just fork and add secrets — GitHub Actions handles the rest.
 
+**Cost:** ~$0.03/month on DeepSeek (~4,000 tokens per run, once daily).
+
 ## How it works
 
 ```
