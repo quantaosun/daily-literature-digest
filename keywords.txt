@@ -3,13 +3,8 @@
 # Keywords are combined with OR (any match counts)
 # Case-insensitive; PubMed will search Title/Abstract
 
-organic synthesis
-total synthesis
-reaction mechanism
+Absolute free energy calculation
 medicinal chemistry
-C-H activation
-cross-coupling
-enantioselective
-organocatalysis
-photocatalysis
-drug discovery
+kinase inhibitor
+covalent inhibitor
+
