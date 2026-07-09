@@ -3,7 +3,8 @@
 daily-literature-digest
 =======================
 Searches PubMed for latest chemistry papers matching your keywords,
-summarizes them via DeepSeek LLM, and emails the digest to yourself.
+summarizes them via DeepSeek LLM, scores them by novelty and impact,
+and emails the digest with interactive HTML formatting and data visualizations.
 
 Configure via environment variables (set in GitHub Secrets):
   LLM_API_KEY     - DeepSeek or OpenAI-compatible API key (required)
@@ -20,6 +21,8 @@ import os
 import sys
 import smtplib
 import email.utils
+import json
+import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -58,7 +61,7 @@ KEYWORDS = [
     "drug discovery",
 ]
 
-# ── Helpers ────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────
 
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {msg}")
@@ -161,6 +164,7 @@ def fetch_pubmed():
                 "journal": journal.strip(),
                 "date": pub_date.strip(),
                 "abstract": truncate_abstract(abstract_text),
+                "full_abstract": abstract_text or "No abstract available",
                 "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                 "pmid": pmid,
             })
@@ -171,12 +175,15 @@ def fetch_pubmed():
 
     return papers
 
-# ── LLM summarization ──────────────────────────────────────────────────
+# ── LLM summarization with scoring ──────────────────────────────────────
 
-def summarize_with_llm(papers):
-    """Send papers to DeepSeek/LLM for summarization. Returns markdown digest."""
+def analyze_and_score_papers(papers):
+    """
+    Send papers to LLM for detailed analysis and scoring.
+    Returns: (digest_markdown, scored_papers_list)
+    """
     if not papers:
-        return "No papers found today."
+        return "No papers found today.", []
 
     papers_text = ""
     for i, p in enumerate(papers, 1):
@@ -186,22 +193,42 @@ Title: {p['title']}
 Journal: {p['journal']}
 Published: {p['date']}
 Link: {p['link']}
-Abstract: {p['abstract']}
+Abstract: {p['full_abstract']}
 """
 
-    system_prompt = """You are a chemistry research assistant. Generate a daily literature digest in ENGLISH.
+    system_prompt = """You are a chemistry research analyst. Analyze these papers and provide:
 
-For each paper, provide:
-1. **Title** (linked)
-2. **Why this matters** — 1-2 sentences on significance
-3. **Key contribution** — 2-3 sentences summarizing the main finding
-4. **Relevance** — area (organic synthesis, total synthesis, reaction mechanism, medicinal chemistry, DEL, catalysis, etc.)
+1. A detailed markdown digest with sections for each paper including:
+   - **Title** (linked)
+   - **Why this matters** — significance and novelty
+   - **Key contribution** — 2-3 sentences of main finding
+   - **Relevance** — research area
+   - **Trend connection** — how this connects to recent science trends
 
-Format in clean Markdown. End with a "Quick Take" section — overall assessment."""
+2. A scoring summary (JSON format at the end) with each paper scored 1-10 on:
+   - novelty (how novel/innovative)
+   - impact (potential significance)
+   - trend_relevance (connection to current chemistry trends)
 
-    user_prompt = f"Here are today's papers from PubMed. Generate a digest.\n\n{papers_text}"
+Format the JSON as:
+```json
+{
+  "paper_scores": [
+    {"title": "...", "novelty": N, "impact": N, "trend_relevance": N, "overall": N}
+  ],
+  "trend_insights": "Brief summary of detected science trends"
+}
+```
 
-    log(f"Sending {len(papers)} papers to LLM ({LLM_MODEL}) for summarization...")
+End with a "Quick Take" section — overall assessment."""
+
+    user_prompt = f"""Here are today's papers from PubMed. Provide detailed analysis with scoring.
+
+{papers_text}
+
+Remember to include the JSON scoring at the end."""
+
+    log(f"Sending {len(papers)} papers to LLM ({LLM_MODEL}) for detailed analysis...")
 
     try:
         resp = requests.post(
@@ -217,22 +244,40 @@ Format in clean Markdown. End with a "Quick Take" section — overall assessment
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": 0.3,
-                "max_tokens": 4096,
+                "max_tokens": 6000,
             },
             timeout=60,
         )
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
-        log("  LLM summarization complete")
-        return content
+        log("  LLM analysis complete")
+        
+        # Extract scores from JSON
+        scored_papers = extract_scores(content, papers)
+        return content, scored_papers
     except Exception as e:
         log(f"  ⚠  LLM API error: {e}")
-        return fallback_digest(papers)
+        return fallback_digest(papers), []
+
+
+def extract_scores(llm_response, papers):
+    """Extract paper scores from LLM response JSON."""
+    try:
+        # Find JSON block in response
+        start = llm_response.find("```json")
+        end = llm_response.find("```", start + 7)
+        if start != -1 and end != -1:
+            json_str = llm_response[start + 7:end].strip()
+            data = json.loads(json_str)
+            return data.get("paper_scores", [])
+    except Exception as e:
+        log(f"  ⚠  Failed to parse scores: {e}")
+    return []
 
 
 def fallback_digest(papers):
-    """Generate a simple digest without LLM."""
+    """Generate a simple digest without advanced LLM analysis."""
     lines = [f"**{datetime.now():%B %d, %Y}**\n"]
     for p in papers:
         lines.append(f"## {p['title']}")
@@ -241,10 +286,10 @@ def fallback_digest(papers):
         lines.append(f"\n{p['abstract']}\n")
     return "\n".join(lines)
 
-# ── HTML email template ──────────────────────────────────────────────
+# ── HTML email template with interactive elements ──────────────────────
 
 def markdown_to_html(md):
-    """Convert basic markdown (headings, bold, links, bare URLs, lists) to HTML."""
+    """Convert markdown to HTML with proper formatting."""
     import re
     lines = md.split("\n")
     html_lines = []
@@ -253,9 +298,8 @@ def markdown_to_html(md):
     def inline(line):
         line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
         line = re.sub(r'\*(.+?)\*', r'<em>\1</em>', line)
-        line = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', line)
-        # Bare URLs (but not already-quoted hrefs)
-        line = re.sub(r'(?<!")(https?://[^\s<]+)', r'<a href="\1">\1</a>', line)
+        line = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" target="_blank">\1</a>', line)
+        line = re.sub(r'(?<!")(https?://[^\s<]+)', r'<a href="\1" target="_blank">\1</a>', line)
         return line
 
     for line in lines:
@@ -289,15 +333,110 @@ def markdown_to_html(md):
     return "\n".join(html_lines)
 
 
-def build_html_email(digest_md):
-    """Wrap digest content in a styled HTML email with dark mode support."""
+def create_score_chart_svg(scored_papers):
+    """Create an SVG chart showing paper scores."""
+    if not scored_papers or len(scored_papers) == 0:
+        return ""
+    
+    # Limit to top 5 papers
+    papers_to_chart = scored_papers[:5]
+    
+    chart_width = 400
+    chart_height = 300
+    padding = 40
+    bar_width = 50
+    bar_gap = 15
+    
+    svg_lines = [
+        f'<svg width="{chart_width}" height="{chart_height}" xmlns="http://www.w3.org/2000/svg">',
+        '<style>',
+        '.chart-title { font-size: 16px; font-weight: bold; fill: #1a1a2e; }',
+        '.chart-label { font-size: 12px; fill: #666; }',
+        '.bar-novelty { fill: #3b82f6; }',
+        '.bar-impact { fill: #ef4444; }',
+        '.bar-trend { fill: #10b981; }',
+        '@media (prefers-color-scheme: dark) {',
+        '.chart-title { fill: #e2e8f0; }',
+        '.chart-label { fill: #94a3b8; }',
+        '}',
+        '</style>',
+    ]
+    
+    # Title
+    svg_lines.append(f'<text x="10" y="25" class="chart-title">Paper Scores (Top 5)</text>')
+    
+    # Y-axis
+    svg_lines.append(f'<line x1="{padding-10}" y1="{padding}" x2="{padding-10}" y2="{chart_height-padding}" stroke="#ccc" stroke-width="1"/>')
+    
+    # X-axis
+    svg_lines.append(f'<line x1="{padding-10}" y1="{chart_height-padding}" x2="{chart_width-padding}" y2="{chart_height-padding}" stroke="#ccc" stroke-width="1"/>')
+    
+    # Y-axis labels (0, 5, 10)
+    for i in [0, 5, 10]:
+        y = chart_height - padding - (i/10.0) * (chart_height - 2*padding)
+        svg_lines.append(f'<text x="5" y="{y+4}" class="chart-label" text-anchor="end">{i}</text>')
+    
+    # Bars for each paper
+    x_pos = padding
+    for idx, paper in enumerate(papers_to_chart):
+        novelty = paper.get("novelty", 5)
+        impact = paper.get("impact", 5)
+        trend = paper.get("trend_relevance", 5)
+        
+        # Novelty bar
+        h1 = (novelty/10.0) * (chart_height - 2*padding)
+        svg_lines.append(f'<rect x="{x_pos}" y="{chart_height-padding-h1}" width="{bar_width//3-2}" height="{h1}" class="bar-novelty"/>')
+        
+        # Impact bar
+        h2 = (impact/10.0) * (chart_height - 2*padding)
+        svg_lines.append(f'<rect x="{x_pos+bar_width//3}" y="{chart_height-padding-h2}" width="{bar_width//3-2}" height="{h2}" class="bar-impact"/>')
+        
+        # Trend bar
+        h3 = (trend/10.0) * (chart_height - 2*padding)
+        svg_lines.append(f'<rect x="{x_pos+2*bar_width//3}" y="{chart_height-padding-h3}" width="{bar_width//3-2}" height="{h3}" class="bar-trend"/>')
+        
+        x_pos += bar_width + bar_gap
+    
+    # Legend
+    legend_y = chart_height - 10
+    svg_lines.append(f'<rect x="{padding}" y="{legend_y-15}" width="10" height="10" class="bar-novelty"/>')
+    svg_lines.append(f'<text x="{padding+15}" y="{legend_y-5}" class="chart-label">Novelty</text>')
+    
+    svg_lines.append(f'<rect x="{padding+100}" y="{legend_y-15}" width="10" height="10" class="bar-impact"/>')
+    svg_lines.append(f'<text x="{padding+115}" y="{legend_y-5}" class="chart-label">Impact</text>')
+    
+    svg_lines.append(f'<rect x="{padding+180}" y="{legend_y-15}" width="10" height="10" class="bar-trend"/>')
+    svg_lines.append(f'<text x="{padding+195}" y="{legend_y-5}" class="chart-label">Trend</text>')
+    
+    svg_lines.append('</svg>')
+    
+    return "\n".join(svg_lines)
+
+
+def build_html_email(digest_md, scored_papers):
+    """Wrap digest content in a styled interactive HTML email."""
     body_html = markdown_to_html(digest_md)
     today = datetime.now().strftime("%B %d, %Y")
+    
+    # Create score chart
+    score_chart = create_score_chart_svg(scored_papers)
+    chart_section = ""
+    if score_chart:
+        chart_section = f"""
+    <div class="section">
+      <h2>📊 Paper Scores Overview</h2>
+      <div class="chart-container">
+        {score_chart}
+      </div>
+      <p class="chart-note"><em>Bars show novelty (blue), impact (red), and trend relevance (green)</em></p>
+    </div>
+"""
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="supported-color-schemes" content="light dark">
 <style>
@@ -321,61 +460,103 @@ def build_html_email(digest_md):
       --hr: #334155;
     }}
   }}
+  * {{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }}
   body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
-    max-width: 680px;
+    max-width: 720px;
     margin: 0 auto;
-    padding: 24px 16px;
-    line-height: 1.6;
+    padding: 20px 16px;
+    line-height: 1.7;
     font-size: 15px;
   }}
+  .container {{
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 0;
+  }}
   h1 {{
-    font-size: 24px;
-    margin: 0 0 4px 0;
+    font-size: 28px;
+    margin: 0 0 8px 0;
     color: var(--text);
   }}
+  .date {{
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+  }}
   h2 {{
-    font-size: 18px;
-    margin: 28px 0 8px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
+    font-size: 20px;
+    margin: 28px 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent);
     color: var(--text);
   }}
   h3 {{
-    font-size: 16px;
-    margin: 20px 0 6px 0;
+    font-size: 17px;
+    margin: 20px 0 8px 0;
     color: var(--text);
   }}
   p {{
-    margin: 6px 0;
+    margin: 12px 0;
   }}
   a {{
     color: var(--accent);
     text-decoration: none;
+    transition: opacity 0.2s;
   }}
   a:hover {{
+    opacity: 0.8;
     text-decoration: underline;
+  }}
+  strong {{
+    color: var(--text);
+    font-weight: 600;
+  }}
+  em {{
+    font-style: italic;
+    color: var(--text-secondary);
   }}
   hr {{
     border: none;
-    border-top: 1px solid var(--hr);
+    border-top: 1px solid var(--border);
     margin: 24px 0;
   }}
   ul {{
-    margin: 6px 0;
-    padding-left: 20px;
+    margin: 8px 0;
+    padding-left: 24px;
   }}
   li {{
-    margin: 3px 0;
+    margin: 6px 0;
   }}
-  .header {{
-    margin-bottom: 24px;
+  .section {{
+    margin: 24px 0;
+    padding: 16px;
+    background: rgba(37, 99, 235, 0.05);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
   }}
-  .header .date {{
-    font-size: 13px;
+  @media (prefers-color-scheme: dark) {{
+    .section {{
+      background: rgba(96, 165, 250, 0.05);
+    }}
+  }}
+  .chart-container {{
+    margin: 16px 0;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }}
+  .chart-note {{
+    font-size: 12px;
     color: var(--text-secondary);
+    margin-top: 8px;
   }}
   .footer {{
     margin-top: 32px;
@@ -385,20 +566,40 @@ def build_html_email(digest_md):
     color: var(--text-secondary);
     text-align: center;
   }}
+  .cta-button {{
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 4px;
+    text-decoration: none;
+    margin-top: 12px;
+    transition: opacity 0.2s;
+  }}
+  .cta-button:hover {{
+    opacity: 0.9;
+  }}
   @media only screen and (max-width: 480px) {{
     body {{ padding: 16px 12px; }}
-    .paper {{ padding: 12px 14px; }}
+    .container {{ padding: 16px; }}
+    h1 {{ font-size: 24px; }}
+    h2 {{ font-size: 18px; }}
   }}
 </style>
 </head>
 <body>
-  <div class="header">
+  <div class="container">
     <h1>📬 Daily Literature Digest</h1>
     <div class="date">{today}</div>
-  </div>
-  {body_html}
-  <div class="footer">
-    Generated by <a href="https://github.com/quantaosun/daily-literature-digest">daily-literature-digest</a>
+    
+{chart_section}
+    
+    {body_html}
+    
+    <div class="footer">
+      <p>Generated by <a href="https://github.com/quantaosun/daily-literature-digest">daily-literature-digest</a></p>
+      <p style="margin-top: 8px; font-size: 11px;">Built with ❤️ for chemistry research</p>
+    </div>
   </div>
 </body>
 </html>"""
@@ -406,15 +607,15 @@ def build_html_email(digest_md):
 
 # ── Email sending ────────────────────────────────────────────────────
 
-def send_email(digest_md):
-    """Send the digest via SMTP. Sends to yourself."""
+def send_email(digest_md, scored_papers):
+    """Send the digest via SMTP with interactive HTML."""
     if not all([SMTP_SERVER, SMTP_USER, SMTP_PASSWORD]):
         log("⚠  SMTP not fully configured, printing digest instead")
         print(digest_md)
         return
 
     today = datetime.now().strftime("%Y-%m-%d")
-    subject = f"Daily Literature Digest — {today}"
+    subject = f"📬 Daily Literature Digest — {today}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -423,7 +624,7 @@ def send_email(digest_md):
     msg["Date"] = email.utils.formatdate(localtime=True)
 
     msg.attach(MIMEText(digest_md, "plain", "utf-8"))
-    msg.attach(MIMEText(build_html_email(digest_md), "html", "utf-8"))
+    msg.attach(MIMEText(build_html_email(digest_md, scored_papers), "html", "utf-8"))
 
     try:
         log(f"Connecting to {SMTP_SERVER}:{SMTP_PORT}...")
@@ -442,7 +643,7 @@ def send_email(digest_md):
         print("\n=== DIGEST (email failed) ===")
         print(digest_md)
 
-# ── Main ───────────────────────────────────────────────────────────────
+# ── Main ────────────────────────────────────────────────────────────
 
 def main():
     log("Starting daily literature digest...")
@@ -455,14 +656,14 @@ def main():
 
     if not papers:
         log("No papers found.")
-        send_email("# Daily Literature Digest\n\nNo papers found matching your criteria today.")
+        send_email("# Daily Literature Digest\n\nNo papers found matching your criteria today.", [])
         return
 
     log(f"Total papers: {len(papers)}")
 
-    digest = summarize_with_llm(papers)
+    digest, scored_papers = analyze_and_score_papers(papers)
 
-    send_email(digest)
+    send_email(digest, scored_papers)
 
     print(digest)
     log("✅ Done!")
