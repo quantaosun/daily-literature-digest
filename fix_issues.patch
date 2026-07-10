@@ -1,0 +1,12 @@
+Issues to fix:
+1. Execution time - add TZ env var to ensure Beijing timezone awareness
+2. Paper links - ensure links are always included in email digest
+
+Current workflow shows: 0 1 * * * (1 AM UTC)
+But GitHub Actions runs in UTC, so we need to add timezone env variable.
+
+9 AM Beijing = 1 AM UTC (Beijing is UTC+8)
+So the cron is correct, but we should verify and document better.
+
+For paper links: The issue is that the LLM might not be including the links in its output.
+We need to ensure links are explicitly included in the fallback digest and markdown processing.

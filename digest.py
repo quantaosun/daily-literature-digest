@@ -230,11 +230,15 @@ Abstract: {p['full_abstract']}
     system_prompt = """You are a chemistry research analyst. Analyze these papers and provide:
 
 1. A detailed markdown digest with sections for each paper including:
-   - **Title** (linked)
+   - **Title** — with clickable PubMed link in markdown format [Title](link)
+   - **Link** — always include the PubMed link as [View on PubMed](link)
    - **Why this matters** — significance and novelty
    - **Key contribution** — 2-3 sentences of main finding
    - **Relevance** — research area
    - **Trend connection** — how this connects to recent science trends
+
+IMPORTANT: Every paper MUST include its PubMed link in the format:
+[View on PubMed](https://pubmed.ncbi.nlm.nih.gov/PMID/)
 
 2. A scoring summary (JSON format at the end) with each paper scored 1-10 on:
    - novelty (how novel/innovative)
@@ -245,13 +249,15 @@ Format the JSON as:
 ```json
 {
   "paper_scores": [
-    {"title": "...", "novelty": N, "impact": N, "trend_relevance": N, "overall": N}
+   {"title": "...", "novelty": N, "impact": N, "trend_relevance": N, "overall": N}
   ],
   "trend_insights": "Brief summary of detected science trends"
 }
 ```
 
-End with a "Quick Take" section — overall assessment."""
+End with a "Quick Take" section — overall assessment.
+
+MANDATORY: Include clickable links for every paper."""
 
     user_prompt = f"""Here are today's papers from PubMed. Provide detailed analysis with scoring.
 
@@ -311,7 +317,7 @@ def fallback_digest(papers):
     """Generate a simple digest without advanced LLM analysis."""
     lines = [f"**{datetime.now():%B %d, %Y}**\n"]
     for p in papers:
-        lines.append(f"## {p['title']}")
+        lines.append(f"## [{p['title']}]({p['link']})")
         lines.append(f"*{p['journal']}* | {p['date']}")
         lines.append(f"**Link:** {p['link']}")
         lines.append(f"\n{p['abstract']}\n")
